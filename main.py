@@ -19,12 +19,13 @@ def GetOptsMap():
   opts, args = getopt.getopt(sys.argv[1:], "", [
       # Standard options
       "username=", "password=", "use_ssl", "server=", 
+      "type=",
 
       # Other params
       "filter_out=", "me=",
       
       # Development options
-      "record", "replay", 
+      "record", "replay", "since=",
       "max_messages=", "random_subset",
       "skip_labels"])
   
@@ -46,34 +47,45 @@ def GetOptsMap():
 def GetMessageInfos(opts):
   m = mail.Mail(
       opts["server"], "use_ssl" in opts, opts["username"], opts["password"],
+      "since" in opts and opts["since"] or None,
       "record" in opts, "replay" in opts, 
       "max_messages" in opts and int(opts["max_messages"]) or -1,
       "random_subset" in opts)
   
-  # First, get all message infos
-  m.SelectAllMail()
-  
-  message_infos = m.GetMessageInfos()
-  
-  # Then for each mailbox, see which messages are in it, and attach that to 
-  # the mail info
-  if "skip_labels" not in opts:
-    message_infos_by_id = \
-        dict([(mi.GetMessageId(), mi) for mi in message_infos])
+  if opts["type"] == "gmail":
+    # First, get all message infos
+    m.SelectAllMailGmail()
     
-    # Don't want to parse all these dates, since we already have them from the
-    # message infos above.
-    messageinfo.MessageInfo.SetParseDate(False)
+    message_infos = m.GetMessageInfos()
     
-    for mailbox in m.GetMailboxes():
+    # Then for each mailbox, see which messages are in it, and attach that to 
+    # the mail info
+    if "skip_labels" not in opts:
+      message_infos_by_id = \
+          dict([(mi.GetMessageId(), mi) for mi in message_infos])
+      
+      # Don't want to parse all these dates, since we already have them from the
+      # message infos above.
+      messageinfo.MessageInfo.SetParseDate(False)
+      
+      for mailbox in m.GetMailboxes(opts["type"]):
+        m.SelectMailbox(mailbox)
+        message_ids = m.GetMessageIds()
+        for mid in message_ids:
+          if mid in message_infos_by_id:
+            message_info = message_infos_by_id[mid]
+            message_info.AddMailbox(mailbox)
+    
+      messageinfo.MessageInfo.SetParseDate(True)
+
+  elif opts["type"] == "exchange":
+    message_infos = []
+    for mailbox in m.GetMailboxes(opts["type"]):
       m.SelectMailbox(mailbox)
-      message_ids = m.GetMessageIds()
-      for mid in message_ids:
-        if mid in message_infos_by_id:
-          message_info = message_infos_by_id[mid]
-          message_info.AddMailbox(mailbox)
-  
-    messageinfo.MessageInfo.SetParseDate(True)
+      message_infos.extend(m.GetMessageInfos())
+
+  else:
+    raise AssertionError("unknown or unsupported account type")
 
   m.Logout()
   

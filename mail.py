@@ -1,6 +1,7 @@
 import imaplib
 import logging
 import random
+import dateutil.parser
 
 import cache
 import messageinfo
@@ -8,10 +9,11 @@ import stringscanner
 
 MAILBOX_GMAIL_ALL_MAIL = "[Gmail]/All Mail"
 MAILBOX_GMAIL_PREFIX = "[Gmail]"
+EXCHANGE_MAILBOXES = ["INBOX", "Sent Items"]
 
 class Mail(object):
   def __init__(self, server, use_ssl, username, password, 
-      record=False, replay=False, max_messages=-1, random_subset=False):
+      since=None, record=False, replay=False, max_messages=-1, random_subset=False):
     self.__server = server
     self.__username = username
     self.__record = record
@@ -21,6 +23,11 @@ class Mail(object):
     
     self.__current_mailbox = None
     
+    if since == None:
+      self.__since = None
+    else:
+      self.__since = dateutil.parser.parse(since)
+
     if record or replay:
       self.__cache = cache.FileCache()
     
@@ -34,7 +41,7 @@ class Mail(object):
     
     self.__mail.login(username, password)
 
-  def GetMailboxes(self):
+  def GetMailboxes(self, account_type):
     logging.info("Getting mailboxes")
     
     r, mailboxes_data = self.__mail.list()
@@ -50,13 +57,16 @@ class Mail(object):
       s.ConsumeAll(" ")
       name = s.ConsumeValue()
       
+      if account_type == "exchange" and name not in EXCHANGE_MAILBOXES:
+        continue
+
       if not "\\Noselect" in attributes and \
           name.find(MAILBOX_GMAIL_PREFIX) != 0:
         mailboxes.append(name)
     
     return mailboxes
   
-  def SelectAllMail(self):
+  def SelectAllMailGmail(self):
     self.SelectMailbox(MAILBOX_GMAIL_ALL_MAIL)
 
   def SelectMailbox(self, mailbox):
@@ -72,10 +82,13 @@ class Mail(object):
     return [m.GetMessageId() for m in message_infos]
 
   def GetMessageInfos(self):
-    return self.__UidFetch(
-        "ALL", 
-        "(UID FLAGS INTERNALDATE RFC822.SIZE RFC822.HEADER)",
-        self.__max_messages)
+    fetch_parts = "(UID FLAGS INTERNALDATE RFC822.SIZE RFC822.HEADER)"
+    if self.__since != None:
+      return self.__UidFetch(
+          "(ALL SINCE \"%s\")" % self.__since.strftime("%d-%b-%Y"),
+          fetch_parts, self.__max_messages)
+    else:
+      return self.__UidFetch("ALL", fetch_parts, self.__max_messages)
 
   def Logout(self):
     logging.info("Logging out")

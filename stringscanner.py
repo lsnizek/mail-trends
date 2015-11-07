@@ -25,12 +25,15 @@ class StringScanner(object):
     self.__index += 1
     return c
     
-  def ReadUntil(self, c):
+  def ReadUntil(self, c, eol=False):
     start = self.__index
     end = self.__data.find(c, self.__index)
     if end != -1:
       self.__index = end
       return self.__data[start:end]
+    elif eol:
+      self.__index = len(self.__data)
+      return self.__data[start:]
     else:
       return ""
   
@@ -79,8 +82,8 @@ class StringScanner(object):
           value.append(c)
       
       value = "".join(value).split()
-    # Numbers
+    # Numbers and unquoted single-word strings
     else:
-      value = self.ReadUntil(" ")
+      value = self.ReadUntil(" ", eol=True)
     
     return value
